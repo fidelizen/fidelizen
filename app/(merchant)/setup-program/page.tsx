@@ -62,6 +62,18 @@ export default function SetupProgramPage() {
     setSaving(true);
     setMsg(null);
 
+    // ✅ Validation basique avant enregistrement
+    if (program.scans_required < 1) {
+      setMsg("❌ Le nombre de passages requis doit être au minimum 1.");
+      setSaving(false);
+      return;
+    }
+    if (program.min_interval_hours < 0) {
+      setMsg("❌ Le délai minimum entre 2 scans ne peut pas être négatif.");
+      setSaving(false);
+      return;
+    }
+
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
@@ -164,6 +176,7 @@ export default function SetupProgramPage() {
           </AnimatePresence>
 
           <div className="space-y-5">
+            {/* Nombre de passages requis */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
                 <Target size={16} className="text-emerald-600" />
@@ -172,13 +185,15 @@ export default function SetupProgramPage() {
               <input
                 type="number"
                 min={1}
-                value={program.scans_required}
-                onChange={(e) =>
+                step={1}
+                value={program.scans_required === 0 ? "" : program.scans_required}
+                onChange={(e) => {
+                  const val = e.target.value;
                   setProgram({
                     ...program,
-                    scans_required: parseInt(e.target.value) || 1,
-                  })
-                }
+                    scans_required: val === "" ? 0 : parseInt(val, 10),
+                  });
+                }}
                 className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500"
               />
               <p className="text-xs text-gray-400 mt-1">
@@ -186,6 +201,7 @@ export default function SetupProgramPage() {
               </p>
             </div>
 
+            {/* Récompense */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
                 <Gift size={16} className="text-emerald-600" />
@@ -205,6 +221,7 @@ export default function SetupProgramPage() {
               />
             </div>
 
+            {/* Délai minimum entre 2 scans */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
                 <Clock size={16} className="text-emerald-600" />
@@ -213,13 +230,15 @@ export default function SetupProgramPage() {
               <input
                 type="number"
                 min={0}
-                value={program.min_interval_hours}
-                onChange={(e) =>
+                step={1}
+                value={program.min_interval_hours === 0 ? "" : program.min_interval_hours}
+                onChange={(e) => {
+                  const val = e.target.value;
                   setProgram({
                     ...program,
-                    min_interval_hours: parseInt(e.target.value) || 0,
-                  })
-                }
+                    min_interval_hours: val === "" ? 0 : parseInt(val, 10),
+                  });
+                }}
                 className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500"
               />
               <p className="text-xs text-gray-400 mt-1">
