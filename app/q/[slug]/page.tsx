@@ -105,7 +105,15 @@ export default function ScanPage() {
         // 🎉 Confettis si récompense
         if (json.rewardIssued) {
           try {
-            const confetti = (await import("canvas-confetti")).default;
+            const { default: confetti } = (await import("canvas-confetti")) as {
+              default: (opts?: {
+                particleCount?: number;
+                spread?: number;
+                origin?: { y?: number };
+                colors?: string[];
+                scalar?: number;
+              }) => void;
+            };
             confetti({
               particleCount: 90,
               spread: 65,
@@ -113,7 +121,9 @@ export default function ScanPage() {
               colors: ["#10B981", "#A7F3D0", "#F4E9C7"],
               scalar: 0.9,
             });
-          } catch {}
+          } catch (e) {
+            console.error("Erreur lors du chargement des confettis:", e);
+          }
           if (json.reward_message) setRewardMessage(json.reward_message);
         }
       }

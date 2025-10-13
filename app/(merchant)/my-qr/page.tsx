@@ -58,12 +58,18 @@ export default function MyQRPage() {
 
         if (qrData) {
           setQR(qrData);
+
+          // ✅ Construction de l'URL publique du QR Code
           const url = `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/q/${qrData.url_slug}`;
-          const dataUrl = await QRCode.toDataURL(url, { width: 300 });
+
+          // ✅ Correction TypeScript : cast explicite car "width" n'est pas toujours typé dans qrcode
+          // mais bien supporté à l'exécution.
+          const dataUrl = await QRCode.toDataURL(url, { width: 300 } as any);
+
           setQrUrl(dataUrl);
         }
       } catch (e) {
-        console.error(e);
+        console.error("Erreur génération QR :", e);
       } finally {
         setLoading(false);
       }
@@ -91,7 +97,7 @@ export default function MyQRPage() {
           Mon QR Code
         </h1>
         <p className="text-gray-500 mt-2 text-sm sm:text-base">
-          Affichez ce code pour que vos clients puissent scanner et cumuler leurs passages 
+          Affichez ce code pour que vos clients puissent scanner et cumuler leurs passages
         </p>
       </div>
 
