@@ -4,154 +4,152 @@ import { createClient } from "@supabase/supabase-js";
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-type Body = {
-  slug: string;                // qrcode url_slug
-  deviceToken?: string | null; // token client (cookie/localStorage)
-  displayName?: string | null; // optionnel
-};
-
 export async function POST(req: Request) {
-  const admin = createClient(url, serviceKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-
   try {
-    const body = (await req.json()) as Body;
-    if (!body.slug) {
-      return NextResponse.json({ ok: false, error: "Missing slug" }, { status: 400 });
+    const body = await req.json();
+    const { slug, deviceToken } = body;
+
+    if (!slug || !deviceToken) {
+      return NextResponse.json(
+        { ok: false, error: "Missing slug or deviceToken" },
+        { status: 400 }
+      );
     }
 
-    // 1) Retrouver le QR (sans join indirect)
-    const { data: qr, error: qrErr } = await admin
+    const admin = createClient(url, serviceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    // 1️⃣ Récupérer le QR code et le merchant_id
+    const { data: qrcode, error: qrErr } = await admin
       .from("qrcodes")
-      .select("id, merchant_id, url_slug, active")
-      .eq("url_slug", body.slug)
+      .select("id, merchant_id, active")
+      .eq("url_slug", slug)
       .single();
 
-    if (qrErr || !qr || !qr.active) {
-      return NextResponse.json({ ok: false, error: "QR inconnu/inactif" }, { status: 404 });
+    if (qrErr || !qrcode || !qrcode.active) {
+      return NextResponse.json(
+        { ok: false, error: "QR code invalide ou inactif" },
+        { status: 404 }
+      );
     }
 
-    const merchantId = qr.merchant_id as string;
-
-    // 1bis) Charger le programme du marchand (requête séparée)
-    const { data: prog, error: progErr } = await admin
+    // 2️⃣ Récupérer le programme du marchand (⚙️ corrigé)
+    const { data: program, error: programErr } = await admin
       .from("programs")
-      .select("scans_required, min_interval_hours, reward_label")
-      .eq("merchant_id", merchantId)
+      .select("scans_required, min_interval_hours")
+      .eq("merchant_id", qrcode.merchant_id)
       .maybeSingle();
 
-    if (progErr) {
-      return NextResponse.json({ ok: false, error: "Program load failed" }, { status: 500 });
+    if (programErr || !program) {
+      return NextResponse.json(
+        { ok: false, error: "Programme non trouvé pour ce commerçant" },
+        { status: 404 }
+      );
     }
 
-    const scansRequired = prog?.scans_required ?? 8;
-    const minIntervalH = prog?.min_interval_hours ?? 12;
-    const rewardLabel = prog?.reward_label ?? "Récompense offerte";
+    const scansRequired = program.scans_required ?? 8;
+    const minHours = program.min_interval_hours ?? 12;
 
-    // 2) Trouver/créer le customer via deviceToken (MVP)
-    const token = (body.deviceToken ?? "").slice(0, 128) || null;
-    let customerId: string | null = null;
+    // 3️⃣ Récupérer ou créer le client
+    let { data: customer } = await admin
+      .from("customers")
+      .select("id")
+      .eq("merchant_id", qrcode.merchant_id)
+      .eq("device_token", deviceToken)
+      .maybeSingle();
 
-    if (token) {
-      const { data: c } = await admin
-        .from("customers")
-        .select("id")
-        .eq("merchant_id", merchantId)
-        .eq("device_token", token)
-        .maybeSingle();
-      if (c) customerId = c.id;
-    }
-
-    if (!customerId) {
-      const { data: created, error: cErr } = await admin
+    if (!customer) {
+      const { data: created } = await admin
         .from("customers")
         .insert({
-          merchant_id: merchantId,
-          device_token: token,
-          display_name: body.displayName ?? null,
+          merchant_id: qrcode.merchant_id,
+          device_token: deviceToken,
         })
         .select("id")
         .single();
-
-      if (cErr || !created) {
-        return NextResponse.json({ ok: false, error: "Customer create failed" }, { status: 500 });
-      }
-      customerId = created.id;
+      customer = created;
     }
 
-    // 3) Anti-abus : dernier scan dans la fenêtre min_interval_hours ?
-    const { data: last } = await admin
+    // 4️⃣ Vérifier le dernier scan pour respecter le délai minimum
+    const { data: lastScan } = await admin
       .from("scans")
-      .select("id, created_at")
-      .eq("merchant_id", merchantId)
-      .eq("customer_id", customerId)
+      .select("created_at")
+      .eq("merchant_id", qrcode.merchant_id)
+      .eq("customer_id", customer.id)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
-    if (last) {
-      const lastAt = new Date(last.created_at);
-      const cutoff = new Date(Date.now() - minIntervalH * 3600000);
-      if (lastAt > cutoff) {
-        // log refus
-        await admin.from("scans").insert({
-          merchant_id: merchantId,
-          qrcode_id: qr.id,
-          customer_id: customerId,
-          accepted: false,
-          reason: "rate_limit",
-        });
+    if (lastScan) {
+      const diffMs = Date.now() - new Date(lastScan.created_at).getTime();
+      const diffH = diffMs / 1000 / 60 / 60;
+      if (diffH < minHours) {
         return NextResponse.json({
           ok: true,
           accepted: false,
           reason: "rate_limit",
-          nextAfterHours: minIntervalH,
+          nextAfterHours: Math.ceil(minHours - diffH),
         });
       }
     }
 
-    // 4) Enregistrer le scan accepté
-    const { error: sErr } = await admin.from("scans").insert({
-      merchant_id: merchantId,
-      qrcode_id: qr.id,
-      customer_id: customerId,
-      accepted: true,
+    // 5️⃣ Enregistrer un nouveau scan
+    await admin.from("scans").insert({
+      merchant_id: qrcode.merchant_id,
+      qrcode_id: qrcode.id,
+      customer_id: customer.id,
       reason: "ok",
     });
-    if (sErr) {
-      return NextResponse.json({ ok: false, error: "Scan insert failed" }, { status: 500 });
-    }
 
-    // 5) Compter les scans acceptés (pour déterminer la récompense)
-    const { data: okScans } = await admin
+    // 6️⃣ Compter le nombre total de scans du client
+    const { count } = await admin
       .from("scans")
-      .select("id")
-      .eq("merchant_id", merchantId)
-      .eq("customer_id", customerId)
-      .eq("accepted", true);
+      .select("*", { count: "exact", head: true })
+      .eq("merchant_id", qrcode.merchant_id)
+      .eq("customer_id", customer.id);
 
-    const okCount = okScans?.length ?? 0;
+    const current = count ?? 0;
+    const required = scansRequired;
+    const rewardIssued = current >= required;
 
-    let rewardIssued = false;
-    if (okCount > 0 && okCount % scansRequired === 0) {
-      const { error: rErr } = await admin.from("rewards").insert({
-        merchant_id: merchantId,
-        customer_id: customerId,
-        label: rewardLabel,
+    // 7️⃣ Récupérer le message de récompense du marchand
+    const { data: merchantData } = await admin
+      .from("merchants")
+      .select("reward_message")
+      .eq("id", qrcode.merchant_id)
+      .maybeSingle();
+
+    // 8️⃣ Si seuil atteint → enregistrer la récompense + reset des scans
+    if (rewardIssued) {
+      await admin.from("rewards").insert({
+        merchant_id: qrcode.merchant_id,
+        customer_id: customer.id,
+        label: "Récompense débloquée",
       });
-      if (!rErr) rewardIssued = true;
+
+      // ✅ Réinitialise les scans du client après récompense
+      await admin
+        .from("scans")
+        .delete()
+        .eq("merchant_id", qrcode.merchant_id)
+        .eq("customer_id", customer.id);
     }
 
+    // 9️⃣ Réponse finale
     return NextResponse.json({
       ok: true,
       accepted: true,
       rewardIssued,
-      progress: { current: okCount % scansRequired, required: scansRequired },
+      progress: { current, required },
+      reward_message:
+        merchantData?.reward_message ??
+        "🎉 Bravo ! Vous avez complété votre panier de fidélité !",
     });
-  } catch (e: any) {
+  } catch (e) {
+    console.error("❌ Erreur serveur /scan:", e);
     return NextResponse.json(
-      { ok: false, error: e?.message ?? "Server error" },
+      { ok: false, error: "Erreur serveur" },
       { status: 500 }
     );
   }

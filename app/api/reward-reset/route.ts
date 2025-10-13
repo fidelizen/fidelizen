@@ -4,78 +4,71 @@ import { createClient } from "@supabase/supabase-js";
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-type Body = {
-  slug: string;
-  deviceToken: string;
-};
-
 export async function POST(req: Request) {
-  const admin = createClient(url, serviceKey, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  });
-
   try {
-    const { slug, deviceToken } = (await req.json()) as Body;
-    if (!slug || !deviceToken)
-      return NextResponse.json({ ok: false, error: "Missing data" }, { status: 400 });
+    const { slug, deviceToken } = await req.json();
 
-    // 1️⃣ Trouver le QR + commerce
-    const { data: qr, error: qrErr } = await admin
+    if (!slug || !deviceToken) {
+      return NextResponse.json(
+        { ok: false, error: "Missing slug or deviceToken" },
+        { status: 400 }
+      );
+    }
+
+    const admin = createClient(url, serviceKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
+
+    // 1️⃣ Identifier le commerçant via le QR code
+    const { data: qrcode, error: qrErr } = await admin
       .from("qrcodes")
-      .select("id, merchant_id, url_slug")
+      .select("merchant_id")
       .eq("url_slug", slug)
-      .single();
+      .maybeSingle();
 
-    if (qrErr || !qr)
-      return NextResponse.json({ ok: false, error: "QR not found" }, { status: 404 });
+    if (qrErr || !qrcode) {
+      return NextResponse.json(
+        { ok: false, error: "QR code non trouvé" },
+        { status: 404 }
+      );
+    }
 
-    const merchantId = qr.merchant_id;
-
-    // 2️⃣ Trouver le client via son deviceToken
+    // 2️⃣ Identifier le client
     const { data: customer, error: custErr } = await admin
       .from("customers")
       .select("id")
-      .eq("merchant_id", merchantId)
+      .eq("merchant_id", qrcode.merchant_id)
       .eq("device_token", deviceToken)
       .maybeSingle();
 
-    if (custErr || !customer)
-      return NextResponse.json({ ok: false, error: "Customer not found" }, { status: 404 });
+    if (custErr || !customer) {
+      return NextResponse.json(
+        { ok: false, error: "Client non trouvé" },
+        { status: 404 }
+      );
+    }
 
-    const customerId = customer.id;
+    // 3️⃣ Supprimer la dernière récompense enregistrée (s’il y en a une)
+    await admin
+      .from("rewards")
+      .delete()
+      .eq("merchant_id", qrcode.merchant_id)
+      .eq("customer_id", customer.id);
 
-    // 3️⃣ Marquer les scans du client comme “reward_reset”
+    // 4️⃣ Réinitialiser les scans pour repartir à zéro
     await admin
       .from("scans")
-      .update({ reward_reset: true })
-      .eq("merchant_id", merchantId)
-      .eq("customer_id", customerId)
-      .eq("accepted", true);
+      .delete()
+      .eq("merchant_id", qrcode.merchant_id)
+      .eq("customer_id", customer.id);
 
-    // 4️⃣ Créer une entrée reward
-    const { error: rErr } = await admin.from("rewards").insert({
-      merchant_id: merchantId,
-      customer_id: customerId,
-      label: "Récompense validée en caisse",
-      issued_at: new Date().toISOString(),
-      redeemed_at: new Date().toISOString(),
-      staff_pin_used: false,
-    });
-
-    if (rErr) console.error("Reward insert failed:", rErr);
-
-    // 5️⃣ Remettre le compteur à zéro côté customer
-    await admin
-      .from("customers")
-      .update({ last_reset_at: new Date().toISOString() })
-      .eq("id", customerId);
-
-    return NextResponse.json({
-      ok: true,
-      message: "Récompense validée et compteur remis à zéro",
-    });
-  } catch (e: any) {
-    console.error(e);
-    return NextResponse.json({ ok: false, error: e?.message ?? "Server error" }, { status: 500 });
+    // 5️⃣ Réponse finale
+    return NextResponse.json({ ok: true, message: "Récompense validée et compteur réinitialisé." });
+  } catch (e) {
+    console.error("❌ Erreur /reward-reset:", e);
+    return NextResponse.json(
+      { ok: false, error: "Erreur serveur" },
+      { status: 500 }
+    );
   }
 }

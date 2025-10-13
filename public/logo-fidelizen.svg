@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="100%" height="auto">
+  <!-- Couleur principale -->
+  <style>
+    .primary { fill: #0F3C32; }
+    text { font-family: 'Poppins', 'Helvetica Neue', Helvetica, Arial, sans-serif; font-weight: 600; }
+  </style>
+
+  <!-- Icône panier -->
+  <g class="primary" transform="translate(130,60) scale(1.1)">
+    <rect x="0" y="40" width="140" height="20" rx="5" />
+    <rect x="15" y="60" width="110" height="50" rx="6" />
+    <rect x="25" y="70" width="25" height="30" />
+    <rect x="60" y="70" width="25" height="30" />
+    <rect x="95" y="70" width="25" height="30" />
+    <rect x="45" y="0" width="10" height="40" rx="4" />
+    <rect x="85" y="0" width="10" height="40" rx="4" />
+  </g>
+
+  <!-- Texte Fidélizen -->
+  <text x="50%" y="300" font-size="72" text-anchor="middle" class="primary">Fidelizen</text>
+</svg>

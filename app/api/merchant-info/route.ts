@@ -12,17 +12,24 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: "Missing slug" }, { status: 400 });
   }
 
-  const admin = createClient(url, serviceKey, { auth: { autoRefreshToken: false, persistSession: false } });
+  const admin = createClient(url, serviceKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
 
+  // ✅ On sélectionne aussi le reward_message du marchand
   const { data, error } = await admin
     .from("qrcodes")
-    .select("merchant_id, merchants(business)")
+    .select("merchant_id, merchants(business, reward_message)")
     .eq("url_slug", slug)
     .single();
 
-  if (error || !data) {
+  if (error || !data || !data.merchants) {
     return NextResponse.json({ ok: false, error: "QR not found" }, { status: 404 });
   }
 
-  return NextResponse.json({ ok: true, business: data.merchants.business });
+  return NextResponse.json({
+    ok: true,
+    business: data.merchants.business,
+    reward_message: data.merchants.reward_message,
+  });
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -12,6 +13,7 @@ import {
   LayoutDashboard,
   Menu,
   X,
+  MessageSquare, // 👈 ajout pour l’icône Contact
 } from "lucide-react";
 
 export default function MerchantLayout({ children }: { children: React.ReactNode }) {
@@ -49,11 +51,13 @@ export default function MerchantLayout({ children }: { children: React.ReactNode
     router.push("/login");
   }
 
+  // === NAVIGATION ===
   const nav = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { href: "/my-qr", label: "Mon QR code", icon: QrCode },
     { href: "/setup-program", label: "Programme", icon: Gift },
     { href: "/settings", label: "Paramètres", icon: Settings },
+    { href: "/contact", label: "Nous contacter", icon: MessageSquare }, // 👈 ajout du bouton contact
   ];
 
   const initials = businessName ? businessName[0].toUpperCase() : "?";
@@ -62,12 +66,20 @@ export default function MerchantLayout({ children }: { children: React.ReactNode
     <div className="min-h-screen flex flex-col sm:flex-row bg-gray-50 text-gray-800">
       {/* === SIDEBAR (Desktop) === */}
       <aside className="hidden sm:flex w-64 bg-white border-r shadow-sm flex-col">
-        <div className="p-6 border-b">
-          <h1 className="text-xl font-bold text-emerald-600">Fidélizen</h1>
-          <p className="text-xs text-gray-500 mt-1">Espace commerçant</p>
+        {/* Logo */}
+        <div className="h-[64px] px-5 border-b flex items-center justify-center">
+          <Image
+            src="/logo-fidelizen.svg"
+            alt="Fidelizen"
+            width={110}
+            height={28}
+            priority
+            className="object-contain"
+          />
         </div>
 
-        <nav className="flex-1 p-4 space-y-1">
+        {/* Navigation */}
+        <nav className="flex-1 p-4 space-y-1 mt-2">
           {nav.map((item) => {
             const active = pathname === item.href;
             const Icon = item.icon;
@@ -88,7 +100,7 @@ export default function MerchantLayout({ children }: { children: React.ReactNode
           })}
         </nav>
 
-        {/* Bas du menu */}
+        {/* Footer */}
         <div className="border-t p-4 text-sm text-gray-600">
           {userEmail && <p className="truncate mb-2 text-gray-500">{userEmail}</p>}
           <button
@@ -111,7 +123,14 @@ export default function MerchantLayout({ children }: { children: React.ReactNode
           >
             {menuOpen ? <X size={22} /> : <Menu size={22} />}
           </button>
-          <h1 className="text-lg font-semibold text-emerald-600">Fidélizen</h1>
+          <Image
+            src="/logo-fidelizen.svg"
+            alt="Fidelizen"
+            width={100}
+            height={26}
+            priority
+            className="object-contain"
+          />
         </div>
 
         {businessName && (
@@ -123,7 +142,7 @@ export default function MerchantLayout({ children }: { children: React.ReactNode
         )}
       </header>
 
-      {/* === MOBILE MENU (overlay) === */}
+      {/* === MOBILE MENU OVERLAY === */}
       {menuOpen && (
         <div
           className="fixed inset-0 bg-black/40 z-40"
@@ -131,13 +150,21 @@ export default function MerchantLayout({ children }: { children: React.ReactNode
         />
       )}
 
+      {/* === MOBILE MENU DRAWER === */}
       <div
         className={`fixed top-0 left-0 z-50 w-64 h-full bg-white shadow-lg transform transition-transform sm:hidden ${
           menuOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="p-6 border-b flex justify-between items-center">
-          <h2 className="text-lg font-bold text-emerald-600">Menu</h2>
+        <div className="p-5 border-b flex justify-between items-center">
+          <Image
+            src="/logo-fidelizen.svg"
+            alt="Fidelizen"
+            width={110}
+            height={28}
+            priority
+            className="object-contain"
+          />
           <button onClick={() => setMenuOpen(false)}>
             <X size={20} className="text-gray-600" />
           </button>
@@ -186,9 +213,7 @@ export default function MerchantLayout({ children }: { children: React.ReactNode
           </h2>
           {businessName && (
             <div className="flex items-center gap-3">
-              <div
-                className="h-9 w-9 flex items-center justify-center rounded-full bg-emerald-100 border border-emerald-200 text-emerald-700 font-semibold"
-              >
+              <div className="h-9 w-9 flex items-center justify-center rounded-full bg-emerald-100 border border-emerald-200 text-emerald-700 font-semibold">
                 {initials}
               </div>
               <span className="font-medium text-gray-700">{businessName}</span>
@@ -205,7 +230,7 @@ export default function MerchantLayout({ children }: { children: React.ReactNode
         </main>
       </div>
 
-      {/* Effet d’apparition */}
+      {/* Animation globale */}
       <style jsx global>{`
         @keyframes fadeIn {
           from {
@@ -230,5 +255,6 @@ function getPageTitle(pathname: string): string {
   if (pathname.includes("my-qr")) return "Mon QR code";
   if (pathname.includes("setup-program")) return "Mon programme";
   if (pathname.includes("settings")) return "Paramètres";
+  if (pathname.includes("contact")) return "Nous contacter"; // 👈 ajouté ici
   return "";
 }
