@@ -25,7 +25,7 @@ export async function POST(req: Request) {
       .from("qrcodes")
       .select("id, merchant_id, active")
       .eq("url_slug", slug)
-      .single();
+      .maybeSingle();
 
     if (qrErr || !qrcode || !qrcode.active) {
       return NextResponse.json(
@@ -34,7 +34,7 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2️⃣ Récupérer le programme du marchand (⚙️ corrigé)
+    // 2️⃣ Récupérer le programme du marchand
     const { data: program, error: programErr } = await admin
       .from("programs")
       .select("scans_required, min_interval_hours")
@@ -52,15 +52,19 @@ export async function POST(req: Request) {
     const minHours = program.min_interval_hours ?? 12;
 
     // 3️⃣ Récupérer ou créer le client
-    let { data: customer } = await admin
+    let { data: customer, error: customerErr } = await admin
       .from("customers")
       .select("id")
       .eq("merchant_id", qrcode.merchant_id)
       .eq("device_token", deviceToken)
       .maybeSingle();
 
+    if (customerErr) {
+      console.error("Erreur récupération client:", customerErr.message);
+    }
+
     if (!customer) {
-      const { data: created } = await admin
+      const { data: created, error: createErr } = await admin
         .from("customers")
         .insert({
           merchant_id: qrcode.merchant_id,
@@ -68,11 +72,26 @@ export async function POST(req: Request) {
         })
         .select("id")
         .single();
+
+      if (createErr || !created) {
+        return NextResponse.json(
+          { ok: false, error: "Impossible de créer le client" },
+          { status: 500 }
+        );
+      }
+
       customer = created;
     }
 
     // 4️⃣ Vérifier le dernier scan pour respecter le délai minimum
-    const { data: lastScan } = await admin
+    if (!customer) {
+      return NextResponse.json(
+        { ok: false, error: "Client introuvable après création" },
+        { status: 500 }
+      );
+    }
+
+    const { data: lastScan, error: lastScanErr } = await admin
       .from("scans")
       .select("created_at")
       .eq("merchant_id", qrcode.merchant_id)
@@ -81,9 +100,13 @@ export async function POST(req: Request) {
       .limit(1)
       .maybeSingle();
 
+    if (lastScanErr) {
+      console.error("Erreur récupération dernier scan:", lastScanErr.message);
+    }
+
     if (lastScan) {
       const diffMs = Date.now() - new Date(lastScan.created_at).getTime();
-      const diffH = diffMs / 1000 / 60 / 60;
+      const diffH = diffMs / (1000 * 60 * 60);
       if (diffH < minHours) {
         return NextResponse.json({
           ok: true,
@@ -95,30 +118,46 @@ export async function POST(req: Request) {
     }
 
     // 5️⃣ Enregistrer un nouveau scan
-    await admin.from("scans").insert({
+    const { error: insertErr } = await admin.from("scans").insert({
       merchant_id: qrcode.merchant_id,
       qrcode_id: qrcode.id,
       customer_id: customer.id,
       reason: "ok",
     });
 
+    if (insertErr) {
+      console.error("Erreur insertion scan:", insertErr.message);
+      return NextResponse.json(
+        { ok: false, error: "Erreur enregistrement scan" },
+        { status: 500 }
+      );
+    }
+
     // 6️⃣ Compter le nombre total de scans du client
-    const { count } = await admin
+    const { count, error: countErr } = await admin
       .from("scans")
       .select("*", { count: "exact", head: true })
       .eq("merchant_id", qrcode.merchant_id)
       .eq("customer_id", customer.id);
+
+    if (countErr) {
+      console.error("Erreur comptage scans:", countErr.message);
+    }
 
     const current = count ?? 0;
     const required = scansRequired;
     const rewardIssued = current >= required;
 
     // 7️⃣ Récupérer le message de récompense du marchand
-    const { data: merchantData } = await admin
+    const { data: merchantData, error: merchantErr } = await admin
       .from("merchants")
       .select("reward_message")
       .eq("id", qrcode.merchant_id)
       .maybeSingle();
+
+    if (merchantErr) {
+      console.error("Erreur récupération message récompense:", merchantErr.message);
+    }
 
     // 8️⃣ Si seuil atteint → enregistrer la récompense + reset des scans
     if (rewardIssued) {
@@ -146,10 +185,14 @@ export async function POST(req: Request) {
         merchantData?.reward_message ??
         "🎉 Bravo ! Vous avez complété votre panier de fidélité !",
     });
-  } catch (e) {
+  } catch (e: unknown) {
     console.error("❌ Erreur serveur /scan:", e);
     return NextResponse.json(
-      { ok: false, error: "Erreur serveur" },
+      {
+        ok: false,
+        error:
+          e instanceof Error ? e.message : "Erreur serveur inattendue",
+      },
       { status: 500 }
     );
   }
