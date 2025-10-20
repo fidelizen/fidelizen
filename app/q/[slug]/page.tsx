@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Image from "next/image";
 import { motion, AnimatePresence } from "framer-motion";
+import StampCard from "./StampCard"; // 👈 composant carte à tampons
 
+// Génère ou récupère le device token unique du client
 function getOrSetDeviceToken(): string {
   const KEY = "fidelizen_device_token";
   try {
@@ -19,40 +21,29 @@ function getOrSetDeviceToken(): string {
   }
 }
 
-function Progress({ percent }: { percent: number }) {
-  const p = Math.max(0, Math.min(100, Math.round(percent)));
-  return (
-    <div
-      className="w-full h-3 bg-[#E6E3DA] rounded-full overflow-hidden"
-      role="progressbar"
-      aria-valuenow={p}
-      aria-valuemin={0}
-      aria-valuemax={100}
-    >
-      <div
-        className="h-full bg-[#10B981] transition-all duration-500"
-        style={{ width: `${p}%` }}
-      />
-    </div>
-  );
-}
-
 export default function ScanPage() {
   const params = useParams<{ slug: string }>();
   const [msg, setMsg] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
   const [merchantName, setMerchantName] = useState<string>("");
   const [rewardMessage, setRewardMessage] = useState<string | null>(null);
+  const [merchantLogo, setMerchantLogo] = useState<string | null>(null);
+  const [clientMessage, setClientMessage] = useState<string | null>(null);
+
   const [progress, setProgress] = useState<{ current: number; required: number } | null>(null);
   const [reward, setReward] = useState<boolean>(false);
   const [thanks, setThanks] = useState<boolean>(false);
   const [showPlusOne, setShowPlusOne] = useState<boolean>(false);
 
+  // Chargement initial : infos commerçant + progression
   useEffect(() => {
-    setMsg("Bienvenue 👋");
+    const deviceToken = getOrSetDeviceToken();
     fetchMerchant();
+    fetchProgress(deviceToken);
   }, []);
 
+  // 🔹 Récupère les infos du commerçant
   async function fetchMerchant() {
     try {
       const r = await fetch(`/api/merchant-info?slug=${params.slug}`);
@@ -60,17 +51,39 @@ export default function ScanPage() {
       if (json.ok && json.business) {
         setMerchantName(json.business);
         setRewardMessage(json.reward_message ?? null);
+        setMerchantLogo(json.logo_url ?? null);
+        setClientMessage(json.message_client ?? null);
       }
     } catch {
       setMerchantName("");
     }
   }
 
+  // 🔹 Récupère la progression du client
+  async function fetchProgress(deviceToken: string) {
+    try {
+      const r = await fetch("/api/scan/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slug: params.slug, deviceToken }),
+      });
+      const json = await r.json();
+      if (json.ok && json.progress) {
+        setProgress(json.progress);
+      } else {
+        setProgress({ current: 0, required: 8 });
+      }
+    } catch (e) {
+      console.error("Erreur progression initiale:", e);
+      setProgress({ current: 0, required: 8 });
+    }
+  }
+
+  // 🔹 Validation du passage (ajoute un tampon)
   async function handleScan() {
     setLoading(true);
     setMsg(null);
     setThanks(false);
-
     const deviceToken = getOrSetDeviceToken();
 
     try {
@@ -95,14 +108,14 @@ export default function ScanPage() {
           setProgress(json.progress);
         }
 
-        // 👇 Apparition du "+1"
+        // Animation "+1"
         setShowPlusOne(true);
         setTimeout(() => setShowPlusOne(false), 1200);
 
-        // 💚 Message de soutien
+        // Message de remerciement
         setThanks(true);
 
-        // 🎉 Confettis si récompense
+        // 🎉 Confettis si récompense débloquée
         if (json.rewardIssued) {
           try {
             const { default: confetti } = (await import("canvas-confetti")) as {
@@ -122,7 +135,7 @@ export default function ScanPage() {
               scalar: 0.9,
             });
           } catch (e) {
-            console.error("Erreur lors du chargement des confettis:", e);
+            console.error("Erreur confettis:", e);
           }
           if (json.reward_message) setRewardMessage(json.reward_message);
         }
@@ -134,6 +147,7 @@ export default function ScanPage() {
     }
   }
 
+  // 🔹 Réinitialisation après récompense
   async function handleRewardReset() {
     setLoading(true);
     setMsg(null);
@@ -165,10 +179,9 @@ export default function ScanPage() {
 
   const current = progress?.current ?? 0;
   const required = progress?.required ?? 0;
-  const percent = required ? Math.round((current / required) * 100) : 0;
 
   const defaultRewardText =
-    "Bravo ! Vous avez complété votre panier de fidélité. Venez récupérer votre surprise !";
+    "Bravo 🎉 Vous avez complété votre carte Fidélizen ! Venez récupérer votre surprise 🎁";
 
   return (
     <main className="min-h-screen bg-[#F7F5F0] flex items-center justify-center p-4 relative overflow-hidden">
@@ -178,40 +191,20 @@ export default function ScanPage() {
         transition={{ duration: 0.45, ease: "easeOut" }}
         className="w-full max-w-sm relative"
       >
-        {/* LOGO */}
+        {/* LOGO FIDELIZEN EN-TÊTE */}
         <div className="flex flex-col items-center mb-4">
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.05, duration: 0.4 }}
+          <Image
+            src="/logo-fidelizen.svg"
+            alt="Fidélizen"
+            width={120}
+            height={30}
+            priority
             className="mb-3"
-          >
-            <Image
-              src="/logo-fidelizen.svg"
-              alt="Fidelizen"
-              width={120}
-              height={30}
-              priority
-            />
-          </motion.div>
-
-          <motion.p
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1, duration: 0.4 }}
-            className="text-sm text-gray-600"
-          >
-            Cumulez des points de fidélité chez
-          </motion.p>
-
-          <motion.h1
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15, duration: 0.4 }}
-            className="text-2xl font-semibold text-emerald-700 mt-1 text-center"
-          >
+          />
+          <p className="text-sm text-gray-600">Cumulez des points chez</p>
+          <h1 className="text-2xl font-semibold text-emerald-700 mt-1 text-center">
             {merchantName || "Votre commerçant"}
-          </motion.h1>
+          </h1>
         </div>
 
         {/* CARTE */}
@@ -237,7 +230,7 @@ export default function ScanPage() {
             <button
               onClick={handleScan}
               disabled={loading}
-              className="w-full active:scale-[0.99] bg-[#556B2F] text-white py-3 rounded-xl font-medium hover:bg-[#6B8A45] transition disabled:opacity-60"
+              className="w-full active:scale-[0.99] bg-[#3C5530] text-white py-3 rounded-xl font-medium hover:bg-[#4F6B40] transition disabled:opacity-60"
             >
               {loading ? "Validation…" : "Valider mon passage"}
             </button>
@@ -249,14 +242,14 @@ export default function ScanPage() {
               <button
                 onClick={handleRewardReset}
                 disabled={loading}
-                className="w-full active:scale-[0.99] bg-[#556B2F] text-white py-3 rounded-xl font-medium hover:bg-[#6B8A45] transition disabled:opacity-60"
+                className="w-full active:scale-[0.99] bg-[#3C5530] text-white py-3 rounded-xl font-medium hover:bg-[#4F6B40] transition disabled:opacity-60"
               >
                 Valider la récompense
               </button>
             </div>
           )}
 
-          {/* MESSAGE D’ÉTAT */}
+          {/* MESSAGE D'ÉTAT */}
           <AnimatePresence mode="wait">
             {msg && !reward && (
               <motion.p
@@ -272,22 +265,33 @@ export default function ScanPage() {
             )}
           </AnimatePresence>
 
-          {/* PROGRESSION */}
+          {/* CARTE À TAMPONS */}
           {progress && (
             <div className="mt-5">
               <div className="flex items-center justify-between text-sm mb-2">
                 <span className="text-gray-700">
-                  {reward ? "Récompense débloquée !" : "Progression"}
+                  {reward ? "Récompense débloquée 🎉" : "Votre progression"}
                 </span>
                 <span className="text-gray-500">
                   {reward ? `${required}/${required}` : `${current}/${required}`}
                 </span>
               </div>
-              <Progress percent={reward ? 100 : percent} />
+              <StampCard
+                current={reward ? required : current}
+                required={required}
+                reward={reward}
+                merchantName={merchantName}
+                merchantLogo={merchantLogo}
+              />
             </div>
           )}
         </div>
-
+{/* MESSAGE CLIENT SOUS LA CARTE */}
+{clientMessage && (
+  <p className="mt-4 text-center text-sm text-gray-700 italic">
+    “{clientMessage}”
+  </p>
+)}
         {/* MERCI 💚 */}
         <AnimatePresence>
           {thanks && (

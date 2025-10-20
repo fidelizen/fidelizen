@@ -20,7 +20,7 @@ export async function POST(req: Request) {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    // 1️⃣ Récupérer le QR code et le merchant_id
+    // 1️⃣ Récupérer le QR code + merchant_id
     const { data: qrcode, error: qrErr } = await admin
       .from("qrcodes")
       .select("id, merchant_id, active")
@@ -34,10 +34,10 @@ export async function POST(req: Request) {
       );
     }
 
-    // 2️⃣ Récupérer le programme du marchand
+    // 2️⃣ Récupérer le programme du commerçant
     const { data: program, error: programErr } = await admin
       .from("programs")
-      .select("scans_required, min_interval_hours")
+      .select("scans_required, min_interval_hours, message_client, logo_url")
       .eq("merchant_id", qrcode.merchant_id)
       .maybeSingle();
 
@@ -51,7 +51,18 @@ export async function POST(req: Request) {
     const scansRequired = program.scans_required ?? 8;
     const minHours = program.min_interval_hours ?? 12;
 
-    // 3️⃣ Récupérer ou créer le client
+    // 3️⃣ Récupérer les infos du commerçant (nom + message récompense)
+    const { data: merchantData, error: merchantErr } = await admin
+      .from("merchants")
+      .select("business, reward_message")
+      .eq("id", qrcode.merchant_id)
+      .maybeSingle();
+
+    if (merchantErr) {
+      console.error("Erreur récupération marchand:", merchantErr.message);
+    }
+
+    // 4️⃣ Récupérer ou créer le client
     let { data: customer, error: customerErr } = await admin
       .from("customers")
       .select("id")
@@ -59,9 +70,7 @@ export async function POST(req: Request) {
       .eq("device_token", deviceToken)
       .maybeSingle();
 
-    if (customerErr) {
-      console.error("Erreur récupération client:", customerErr.message);
-    }
+    if (customerErr) console.error("Erreur client:", customerErr.message);
 
     if (!customer) {
       const { data: created, error: createErr } = await admin
@@ -79,19 +88,11 @@ export async function POST(req: Request) {
           { status: 500 }
         );
       }
-
       customer = created;
     }
 
-    // 4️⃣ Vérifier le dernier scan pour respecter le délai minimum
-    if (!customer) {
-      return NextResponse.json(
-        { ok: false, error: "Client introuvable après création" },
-        { status: 500 }
-      );
-    }
-
-    const { data: lastScan, error: lastScanErr } = await admin
+    // 5️⃣ Vérifier le délai minimum
+    const { data: lastScan } = await admin
       .from("scans")
       .select("created_at")
       .eq("merchant_id", qrcode.merchant_id)
@@ -99,10 +100,6 @@ export async function POST(req: Request) {
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-
-    if (lastScanErr) {
-      console.error("Erreur récupération dernier scan:", lastScanErr.message);
-    }
 
     if (lastScan) {
       const diffMs = Date.now() - new Date(lastScan.created_at).getTime();
@@ -113,53 +110,33 @@ export async function POST(req: Request) {
           accepted: false,
           reason: "rate_limit",
           nextAfterHours: Math.ceil(minHours - diffH),
+          business: merchantData?.business ?? "Commerce inconnu",
+          logo_url: program.logo_url ?? null,
+          message_client: program.message_client ?? null,
         });
       }
     }
 
-    // 5️⃣ Enregistrer un nouveau scan
-    const { error: insertErr } = await admin.from("scans").insert({
+    // 6️⃣ Enregistrer le scan
+    await admin.from("scans").insert({
       merchant_id: qrcode.merchant_id,
       qrcode_id: qrcode.id,
       customer_id: customer.id,
       reason: "ok",
     });
 
-    if (insertErr) {
-      console.error("Erreur insertion scan:", insertErr.message);
-      return NextResponse.json(
-        { ok: false, error: "Erreur enregistrement scan" },
-        { status: 500 }
-      );
-    }
-
-    // 6️⃣ Compter le nombre total de scans du client
-    const { count, error: countErr } = await admin
+    // 7️⃣ Compter les scans
+    const { count } = await admin
       .from("scans")
       .select("*", { count: "exact", head: true })
       .eq("merchant_id", qrcode.merchant_id)
       .eq("customer_id", customer.id);
 
-    if (countErr) {
-      console.error("Erreur comptage scans:", countErr.message);
-    }
-
     const current = count ?? 0;
     const required = scansRequired;
     const rewardIssued = current >= required;
 
-    // 7️⃣ Récupérer le message de récompense du marchand
-    const { data: merchantData, error: merchantErr } = await admin
-      .from("merchants")
-      .select("reward_message")
-      .eq("id", qrcode.merchant_id)
-      .maybeSingle();
-
-    if (merchantErr) {
-      console.error("Erreur récupération message récompense:", merchantErr.message);
-    }
-
-    // 8️⃣ Si seuil atteint → enregistrer la récompense + reset des scans
+    // 8️⃣ Si seuil atteint → enregistrer la récompense + reset
     if (rewardIssued) {
       await admin.from("rewards").insert({
         merchant_id: qrcode.merchant_id,
@@ -167,7 +144,6 @@ export async function POST(req: Request) {
         label: "Récompense débloquée",
       });
 
-      // ✅ Réinitialise les scans du client après récompense
       await admin
         .from("scans")
         .delete()
@@ -175,7 +151,7 @@ export async function POST(req: Request) {
         .eq("customer_id", customer.id);
     }
 
-    // 9️⃣ Réponse finale
+    // 9️⃣ Réponse complète
     return NextResponse.json({
       ok: true,
       accepted: true,
@@ -183,15 +159,17 @@ export async function POST(req: Request) {
       progress: { current, required },
       reward_message:
         merchantData?.reward_message ??
-        "🎉 Bravo ! Vous avez complété votre panier de fidélité !",
+        "🎉 Bravo ! Vous avez complété votre carte de fidélité !",
+      business: merchantData?.business ?? "Commerce inconnu",
+      logo_url: program.logo_url ?? null,
+      message_client: program.message_client ?? null,
     });
   } catch (e: unknown) {
     console.error("❌ Erreur serveur /scan:", e);
     return NextResponse.json(
       {
         ok: false,
-        error:
-          e instanceof Error ? e.message : "Erreur serveur inattendue",
+        error: e instanceof Error ? e.message : "Erreur serveur inattendue",
       },
       { status: 500 }
     );

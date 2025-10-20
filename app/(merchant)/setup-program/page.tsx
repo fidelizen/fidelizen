@@ -3,13 +3,15 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { Gift, Target, Clock, Sparkles } from "lucide-react";
+import { Gift, Target, Clock, Sparkles, MessageSquare, Image } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 type Program = {
   scans_required: number;
   reward_label: string;
   min_interval_hours: number;
+  message_client?: string;
+  logo_url?: string;
 };
 
 export default function SetupProgramPage() {
@@ -18,11 +20,17 @@ export default function SetupProgramPage() {
     scans_required: 8,
     reward_label: "",
     min_interval_hours: 24,
+    message_client: "",
+    logo_url: "",
   });
+  const [previewLogo, setPreviewLogo] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
+  // ──────────────────────────────────────────────
+  // CHARGEMENT DU PROGRAMME EXISTANT
+  // ──────────────────────────────────────────────
   useEffect(() => {
     (async () => {
       const { data: { user } } = await supabase.auth.getUser();
@@ -50,24 +58,62 @@ export default function SetupProgramPage() {
           scans_required: data.scans_required,
           reward_label: data.reward_label,
           min_interval_hours: data.min_interval_hours,
+          message_client: data.message_client || "",
+          logo_url: data.logo_url || "",
         });
+        setPreviewLogo(data.logo_url || null);
       }
 
       setLoading(false);
     })();
   }, [router]);
 
+  // ──────────────────────────────────────────────
+  // UPLOAD DU LOGO (Supabase Storage corrigé)
+  // ──────────────────────────────────────────────
+  async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const fileExt = file.name.split(".").pop();
+    const fileName = `${Date.now()}.${fileExt}`;
+    const filePath = `logos/${fileName}`;
+
+    const { error } = await supabase.storage
+      .from("merchant-logos")
+      .upload(filePath, file);
+
+    if (error) {
+      console.error("Erreur upload logo:", error);
+      setMsg("❌ Erreur lors de l’upload du logo.");
+      return;
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from("merchant-logos")
+      .getPublicUrl(filePath);
+
+    if (publicUrlData?.publicUrl) {
+      setProgram((prev) => ({ ...prev, logo_url: publicUrlData.publicUrl }));
+      setPreviewLogo(publicUrlData.publicUrl);
+      setMsg("✅ Logo téléchargé avec succès !");
+    }
+  }
+
+  // ──────────────────────────────────────────────
+  // SAUVEGARDE DU PROGRAMME
+  // ──────────────────────────────────────────────
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setSaving(true);
     setMsg(null);
 
-    // ✅ Validation basique avant enregistrement
     if (program.scans_required < 1) {
       setMsg("❌ Le nombre de passages requis doit être au minimum 1.");
       setSaving(false);
       return;
     }
+
     if (program.min_interval_hours < 0) {
       setMsg("❌ Le délai minimum entre 2 scans ne peut pas être négatif.");
       setSaving(false);
@@ -86,32 +132,20 @@ export default function SetupProgramPage() {
 
       if (!merchant) return;
 
-      const { error } = await supabase
-        .from("programs")
-        .upsert(
-          {
-            merchant_id: merchant.id,
-            scans_required: program.scans_required,
-            reward_label: program.reward_label,
-            min_interval_hours: program.min_interval_hours,
-          },
-          { onConflict: "merchant_id" }
-        );
+      const { error } = await supabase.from("programs").upsert(
+        {
+          merchant_id: merchant.id,
+          scans_required: program.scans_required,
+          reward_label: program.reward_label,
+          min_interval_hours: program.min_interval_hours,
+          message_client: program.message_client,
+          logo_url: program.logo_url,
+        },
+        { onConflict: "merchant_id" }
+      );
 
       if (error) {
         setMsg("❌ Erreur lors de la sauvegarde du programme.");
-        return;
-      }
-
-      const qrRes = await fetch("/api/qr/ensure", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ merchantId: merchant.id }),
-      });
-
-      const qrJson = await qrRes.json();
-      if (!qrJson.ok) {
-        setMsg("⚠️ Programme sauvegardé, mais le QR code n’a pas pu être généré.");
         return;
       }
 
@@ -125,6 +159,9 @@ export default function SetupProgramPage() {
     }
   }
 
+  // ──────────────────────────────────────────────
+  // RENDER
+  // ──────────────────────────────────────────────
   if (loading) {
     return <div className="text-center text-gray-600 py-10">Chargement…</div>;
   }
@@ -138,7 +175,7 @@ export default function SetupProgramPage() {
           Créez votre programme de fidélité
         </h1>
         <p className="text-gray-500 mt-2 text-sm sm:text-base">
-          Personnalisez votre système de points en quelques clics — vos clients vont adorer revenir 
+          Personnalisez votre système de points en quelques clics — vos clients vont adorer revenir
         </p>
       </div>
 
@@ -153,7 +190,6 @@ export default function SetupProgramPage() {
             🧩 Paramétrez votre programme
           </h2>
 
-          {/* ✅ Message animé */}
           <AnimatePresence mode="wait">
             {msg && (
               <motion.p
@@ -186,19 +222,13 @@ export default function SetupProgramPage() {
                 type="number"
                 min={1}
                 step={1}
-                value={program.scans_required === 0 ? "" : program.scans_required}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setProgram({
-                    ...program,
-                    scans_required: val === "" ? 0 : parseInt(val, 10),
-                  });
-                }}
+                placeholder="Ex : 8"
+                value={program.scans_required || ""}
+                onChange={(e) =>
+                  setProgram({ ...program, scans_required: parseInt(e.target.value) })
+                }
                 className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500"
               />
-              <p className="text-xs text-gray-400 mt-1">
-                Exemple : 8 passages = 1 café offert
-              </p>
             </div>
 
             {/* Récompense */}
@@ -209,19 +239,14 @@ export default function SetupProgramPage() {
               </label>
               <input
                 type="text"
-                placeholder="Ex : 1 boisson offerte"
+                placeholder="Ex : 1 café offert"
                 value={program.reward_label}
-                onChange={(e) =>
-                  setProgram({
-                    ...program,
-                    reward_label: e.target.value,
-                  })
-                }
+                onChange={(e) => setProgram({ ...program, reward_label: e.target.value })}
                 className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500"
               />
             </div>
 
-            {/* Délai minimum entre 2 scans */}
+            {/* Délai */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
                 <Clock size={16} className="text-emerald-600" />
@@ -229,21 +254,58 @@ export default function SetupProgramPage() {
               </label>
               <input
                 type="number"
+                placeholder="Ex : 24"
                 min={0}
                 step={1}
-                value={program.min_interval_hours === 0 ? "" : program.min_interval_hours}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setProgram({
-                    ...program,
-                    min_interval_hours: val === "" ? 0 : parseInt(val, 10),
-                  });
-                }}
+                value={program.min_interval_hours || ""}
+                onChange={(e) =>
+                  setProgram({ ...program, min_interval_hours: parseInt(e.target.value) })
+                }
                 className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500"
               />
-              <p className="text-xs text-gray-400 mt-1">
-                Exemple : 24h pour éviter plusieurs scans le même jour
-              </p>
+            </div>
+
+            {/* Message client */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+                <MessageSquare size={16} className="text-emerald-600" />
+                Message client (max 40 caractères)
+              </label>
+              <input
+                type="text"
+                maxLength={40}
+                placeholder="Ex : À bientôt pour votre prochaine visite 👋"
+                value={program.message_client}
+                onChange={(e) =>
+                  setProgram({ ...program, message_client: e.target.value })
+                }
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+
+            {/* Logo */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+                <Image size={16} className="text-emerald-600" />
+                Logo du commerce
+              </label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleLogoUpload}
+                className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-3
+                           file:rounded-md file:border-0 file:text-sm file:font-semibold
+                           file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100"
+              />
+              {previewLogo && (
+                <div className="mt-3 flex justify-center">
+                  <img
+                    src={previewLogo}
+                    alt="Aperçu du logo"
+                    className="h-16 w-16 object-contain rounded-md border"
+                  />
+                </div>
+              )}
             </div>
           </div>
 
@@ -261,7 +323,16 @@ export default function SetupProgramPage() {
         {/* APERÇU VISUEL */}
         <div className="relative bg-white rounded-2xl shadow-lg border border-gray-100 p-8 flex flex-col justify-center items-center text-center overflow-hidden">
           <div className="absolute inset-0 opacity-10 bg-[url('/pattern.svg')] bg-repeat" />
-          <h2 className="text-lg font-semibold text-gray-800 mb-4">
+
+          {previewLogo && (
+            <img
+              src={previewLogo}
+              alt="Logo"
+              className="absolute top-6 left-6 h-12 w-12 object-contain rounded-md border"
+            />
+          )}
+
+          <h2 className="text-lg font-semibold text-gray-800 mb-4 mt-8">
             Aperçu de votre programme
           </h2>
 
@@ -274,9 +345,15 @@ export default function SetupProgramPage() {
           <p className="text-gray-600 text-sm mb-2">
             Passages requis pour la récompense :
           </p>
-          <p className="text-emerald-700 font-semibold mb-6">
-            {program.reward_label || "Ex : 1 boisson offerte"}
+          <p className="text-emerald-700 font-semibold mb-4">
+            {program.reward_label || "Ex : 1 café offert"}
           </p>
+
+          {program.message_client && (
+            <p className="text-sm italic text-gray-500 mb-2">
+              “{program.message_client}”
+            </p>
+          )}
 
           <p className="text-xs text-gray-400">
             ⏱️ Intervalle minimum : {program.min_interval_hours}h
