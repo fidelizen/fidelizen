@@ -128,4 +128,4 @@ export async function GET(req) {
       details: err.stack 
     }, { status: 500 });
   }
-}npm install jsonwebtoken
+}
