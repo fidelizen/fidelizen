@@ -6,7 +6,6 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
  */
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-
 const admin: SupabaseClient = createClient(url, serviceKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
@@ -26,15 +25,9 @@ interface WalletDevice {
  */
 export async function POST(
   req: NextRequest,
-  context: {
-    params: {
-      deviceLibraryIdentifier: string;
-      passTypeIdentifier: string;
-      serialNumber: string;
-    };
-  }
+  { params }: { params: Promise<{ deviceLibraryIdentifier: string; passTypeIdentifier: string; serialNumber: string }> }
 ): Promise<NextResponse> {
-  const { deviceLibraryIdentifier, passTypeIdentifier, serialNumber } = context.params;
+  const { deviceLibraryIdentifier, passTypeIdentifier, serialNumber } = await params;
   const { pushToken }: { pushToken: string } = await req.json();
 
   console.log("📲 Enregistrement Apple Wallet :", {
@@ -45,7 +38,7 @@ export async function POST(
   });
 
   try {
-    // 🔍 Recherche d’un éventuel enregistrement existant
+    // 🔍 Recherche d'un éventuel enregistrement existant
     const { data: existing, error: existingError } = await admin
       .from("wallet_devices")
       .select("id")
@@ -75,19 +68,19 @@ export async function POST(
     console.log("✅ Device Apple Wallet enregistré avec succès !");
     return new NextResponse(null, { status: 201 });
   } catch (err: any) {
-    console.error("❌ Erreur d’enregistrement Apple Wallet :", err);
+    console.error("❌ Erreur d'enregistrement Apple Wallet :", err);
     return NextResponse.json({ error: err.message ?? "Erreur inconnue" }, { status: 500 });
   }
 }
 
 /**
- * 🗑️ Apple envoie une requête DELETE quand l’utilisateur supprime le pass de Wallet.
+ * 🗑️ Apple envoie une requête DELETE quand l'utilisateur supprime le pass de Wallet.
  */
 export async function DELETE(
   req: NextRequest,
-  context: { params: { deviceLibraryIdentifier: string } }
+  { params }: { params: Promise<{ deviceLibraryIdentifier: string }> }
 ): Promise<NextResponse> {
-  const { deviceLibraryIdentifier } = context.params;
+  const { deviceLibraryIdentifier } = await params;
 
   try {
     const { error: deleteError } = await admin
