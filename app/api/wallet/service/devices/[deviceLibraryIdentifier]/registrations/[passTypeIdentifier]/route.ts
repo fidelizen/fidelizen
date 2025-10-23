@@ -6,10 +6,10 @@ import { NextRequest, NextResponse } from "next/server";
  */
 export async function GET(
   req: NextRequest,
-  context: { params: { deviceLibraryIdentifier: string; passTypeIdentifier: string } }
+  { params }: { params: Promise<{ deviceLibraryIdentifier: string; passTypeIdentifier: string }> }
 ): Promise<NextResponse> {
-  const { deviceLibraryIdentifier, passTypeIdentifier } = context.params;
-
+  const { deviceLibraryIdentifier, passTypeIdentifier } = await params;
+  // ...
   console.log("📡 Vérification d’enregistrement :", {
     deviceLibraryIdentifier,
     passTypeIdentifier,
