@@ -1,0 +1,18 @@
+<svg width="1248" height="624" viewBox="0 0 1248 624" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Fond principal vert Fidélizen -->
+  <rect width="1248" height="624" rx="48" fill="#10B981"/>
+  
+  <!-- Liseré blanc intérieur -->
+  <rect x="28" y="28" width="1192" height="568" rx="36" stroke="white" stroke-width="6" fill="none"/>
+
+  <!-- Légère ombre intérieure pour effet de profondeur -->
+  <rect x="28" y="28" width="1192" height="568" rx="36" stroke="rgba(255,255,255,0.15)" stroke-width="10" fill="none"/>
+
+  <!-- Zone blanche (où la grille sera dessinée dynamiquement par ton code) -->
+  <rect x="90" y="260" width="1068" height="300" rx="28" fill="white" fill-opacity="0.08"/>
+
+  <!-- Indice de structure : centré pour repères (à supprimer si tu veux un fond neutre pur) -->
+  <text x="50%" y="180" text-anchor="middle" fill="white" font-family="Inter, Arial, sans-serif" font-size="40" font-weight="600" opacity="0.2">
+    FIDÉLIZEN BACKGROUND
+  </text>
+</svg>

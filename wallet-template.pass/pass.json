@@ -1,51 +1,23 @@
 {
   "formatVersion": 1,
   "passTypeIdentifier": "pass.com.fidelizen.merchant",
-  "serialNumber": "001",
   "teamIdentifier": "3KX2AU58DG",
   "organizationName": "Fidélizen",
   "description": "Carte de fidélité Fidélizen",
   "logoText": "Fidélizen",
-  "foregroundColor": "rgb(255, 255, 255)",
-  "backgroundColor": "rgb(16, 185, 129)",
-  "labelColor": "rgb(255, 255, 255)",
-  "storeCard": {
-    "primaryFields": [
-      {
-        "key": "progress",
-        "label": "Tampons",
-        "value": "0 / 10"
-      }
-    ],
-    "secondaryFields": [
-      {
-        "key": "merchant",
-        "label": "Commerce",
-        "value": "Commerce local"
-      }
-    ],
-    "auxiliaryFields": [
-      {
-        "key": "reward",
-        "label": "Récompense",
-        "value": "Récompense à débloquer"
-      }
-    ],
+  "backgroundColor": "rgb(16,185,129)",
+  "foregroundColor": "rgb(255,255,255)",
+  "labelColor": "rgb(255,255,255)",
+  "generic": {
+    "primaryFields": [],
+    "secondaryFields": [],
+    "auxiliaryFields": [],
     "backFields": [
       {
-        "key": "info",
-        "label": "Fidélizen",
-        "value": "Merci de soutenir le commerce local 💚"
+        "key": "terms",
+        "label": "Conditions",
+        "value": "Présentez cette carte en magasin pour valider vos passages."
       }
     ]
-  },
-  "barcodes": [
-    {
-      "format": "PKBarcodeFormatQR",
-      "message": "https://fidelizen.app/scan/example",
-      "messageEncoding": "iso-8859-1"
-    }
-  ],
-  "webServiceURL": "https://api.fidelizen.app/api/wallet/update",
-  "authenticationToken": "SOME_SECURE_TOKEN"
+  }
 }

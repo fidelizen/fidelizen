@@ -5,12 +5,13 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build --no-lint || echo 'Skipping ESLint on build'",
-    "start": "next start",
+    "start": "node server.js",
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx || true"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.3.1",
     "@supabase/supabase-js": "^2.75.0",
+    "canvas": "^3.2.0",
     "canvas-confetti": "^1.9.3",
     "framer-motion": "^12.23.23",
     "jsonwebtoken": "^9.0.2",
@@ -32,6 +33,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "15.5.4",
+    "ngrok": "^5.0.0-beta.2",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

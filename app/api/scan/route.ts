@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { pushWalletUpdate } from "@/lib/pushWalletUpdate"; // 🔔 Import ajouté
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
@@ -124,6 +125,28 @@ export async function POST(req: Request) {
       customer_id: customer.id,
       reason: "ok",
     });
+
+    // 🔔 6.1️⃣ Envoi de la notification Apple Wallet (mise à jour du pass)
+    try {
+      // On tente de retrouver un push_token lié à ce client
+      const { data: walletDevice } = await admin
+        .from("wallet_devices")
+        .select("push_token")
+        .eq("customer_id", customer.id)
+        .maybeSingle();
+
+      if (walletDevice?.push_token) {
+  const passTypeIdentifier = "pass.com.fidelizen.merchant";
+  const serialNumber = `${qrcode.merchant_id}-${customer.id}-${Date.now()}`; // ou ton serial réel si tu le stockes
+  await pushWalletUpdate(walletDevice.push_token, passTypeIdentifier, serialNumber, true);
+  console.log("📤 Notification Apple Wallet envoyée avec succès !");
+} else {
+  console.log("⚠️ Aucun push_token trouvé pour ce client — carte non notifiée.");
+}
+
+    } catch (err) {
+      console.error("❌ Erreur d’envoi de la notification Apple Wallet :", err);
+    }
 
     // 7️⃣ Compter les scans
     const { count } = await admin
