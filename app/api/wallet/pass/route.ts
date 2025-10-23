@@ -236,12 +236,13 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     fs.rmSync(tempDir, { recursive: true, force: true });
 
     // --- Réponse finale ---
-    return new NextResponse(buffer, {
-      headers: {
-        "Content-Type": "application/vnd.apple.pkpass",
-        "Content-Disposition": `attachment; filename=fidelizen-${merchantName.replace(/[^a-zA-Z0-9]/g, "-")}.pkpass`,
-      },
-    });
+    return new Response(buffer, {
+  headers: {
+    "Content-Type": "application/vnd.apple.pkpass",
+    "Content-Disposition": `attachment; filename=fidelizen-${merchantName.replace(/[^a-zA-Z0-9]/g, "-")}.pkpass`,
+  },
+}) as NextResponse;
+
   } catch (err: any) {
     console.error("❌ Erreur génération Apple Wallet :", err);
 
