@@ -215,8 +215,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const buffer: Buffer = pass.getAsBuffer();
     fs.rmSync(tempDir, { recursive: true, force: true });
 
-    // ✅ Réponse finale
-    return new NextResponse(buffer, {
+    // ✅ Réponse finale (cohérente avec le reste du projet)
+    return new NextResponse(new Uint8Array(buffer), {
       headers: {
         "Content-Type": "application/vnd.apple.pkpass",
         "Content-Disposition": `attachment; filename=fidelizen-${merchantName.replace(/[^a-zA-Z0-9]/g, "-")}-update.pkpass`,
